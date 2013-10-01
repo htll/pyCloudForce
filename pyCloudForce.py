@@ -1,9 +1,8 @@
-import mechanize
+import urllib
+import urllib2
 import re
 from BeautifulSoup import BeautifulSoup
 
-#   Verbose setup
-#   Basiclly break apart each function
 class CloudForcer:
     def __init__( self, proxies=None, judges=[(param, re.compile('(paste|text|input|data|comment)')) for param in ['name', 'id', 'class']] ):
         self.browser = mechanize.Browser()
@@ -30,16 +29,89 @@ class CloudForcer:
         # browser.select_form( predicate=(lambda x: (x.attrs['class'] == soup.textarea.findParent('form')['class']) if 'class' in x.attrs else False ) )
         return list( set( bowls ) )
 
+class CloudForm:
+    def __init__(self,method="get",action=None):
+        self.method = method
+        self.action = action
+        self.inputs = {}
+        self.submit = None
+
+    def addInput(self,name=None,value=None):
+        self.inputs[name] = value
+
+    def addSubmit(self,name):
+        self.submit = name
+
+    def getSubmitString(self,values=[]):
+        submitstr = {}
+        for kv in self.inputs:
+            #submitstr[key] = val
+            print kv
+        if self.submit:
+            submitstr[self.submit] = "Submit"
+        return urllib.urlencode(submitstr)
+
+
+
 class CloudForcer2:
-    def __init__(self,proxies=None,special_attr=["name","id","class"]):
-        pass
+    def __init__(self):
+        self.user_agent = "Mozilla/6 (Unix/Linux 64bit) Gecko"
+        self.headers = {"user-agent": self.user_agent}
+        self.form_attributes = ["name","id","class","method","action"]
+
+    def getForms(self,forms):
+        ret_forms = []
+        for i,form in enumerate(forms):
+            cForm = CloudForm()
+            for attribute in self.form_attributes:
+                try:
+                    cForm.method = form["method"]
+                    cForm.action = form["action"]
+                except KeyError,err:
+                    pass
+            for child in form.contents:
+                try:
+                    if child.name == "input" or child.name == "textarea" or child.name == "select":
+                        if child["type"] == "submit":
+                            cForm.addSubmit(child["name"])
+                        elif child["type"] == "hidden":
+                            cForm.addInput(child["name"],child["value"])
+                        else:
+                            cForm.addInput(name=child["name"])
+                except AttributeError,err:
+                    pass
+            ret_forms.append(cForm)
+        return ret_forms
+
+
+
+
+
 
     def find_forms(self,url):
-        pass
+        request = urllib2.Request(url,None,self.headers)
+        response = urllib2.urlopen(request)
+        page = response.read()
+        pool = BeautifulSoup(page)
+
+        #Find all forms
+        poolforms = pool.findAll("form")
+
+        #
+        forms = self.getForms(poolforms)
+        for form in forms:
+            print "Method:",form.method
+            print "Action:",form.action
+            print form.getSubmitString(["Testing"])
+
+
+
+
 
 if __name__ == "__main__":
-    import argparse
+
     forcer = CloudForcer2()
+    forcer.find_forms("http://pastebin.com/")
 
 
     # argparse
