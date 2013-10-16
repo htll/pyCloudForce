@@ -1,10 +1,11 @@
 import urllib
 import urllib2
+import urlparse
 import re
 import base64
 from BeautifulSoup import BeautifulSoup
 
-class CloudForm:
+class CloudForm( object ):
     def __init__( self, action, method = "get", url = None, user_agent = 'Mozilla/6 (Unix/Linux 64bit) Gecko' ):
         self.method = method
         self.action = action
@@ -26,8 +27,8 @@ class CloudForm:
             submitstr[self.submit] = 'Submit'
         return urllib.urlencode( submitstr )
 
-    def submit():
-        data = getSubmitString()
+    def submit( self ):
+        data = self.getSubmitString()
         if self.method == 'get':
             self.action += '?' + data
             data = None
@@ -38,34 +39,48 @@ class CloudForm:
         pool = BeautifulSoup( response.read() )
         return pool
 
+
 class TestForm( CloudForm ):
-    def __init__( self, action, method = 'get', url = None, user_agent = 'Mozilla/6 (Unix/Linux 64bit) Gecko' ):
-        super( self.__class__, self ).__init__( action, method, url, user_agent )
+    def __init__( self, action, method = 'get', url = None, user_agent = 'Mozilla/6 (Unix/Linux 64bit) Gecko', attrs = [ 'href', 'src', 'id', 'name', 'class' ] ):
+        CloudForm.__init__( self, action, method, url, user_agent )
         self.data = {}
+        self.attrs = attrs
+
+    def getAttrs( self, data ):
+        ret = {}
+        for attr in self.attrs:
+            ret[ attr ] = data
+        return ret
 
     def setInput( self, name, value = None ):
         value = value | base64.b64encode( name )
         self.data[ name ] = value
 
+    def checkStore( self ):
+        pool = super( TestForm, self ).submit()
+        return [ key for key in self.data if pool.find( text=re.compile( self.data[ key ]  ) ) or pool.find( attrs=self.getAttrs( self.data[ key ] ) ) ] # find self.data[ key ] in response
 
-class FieldJudge:
+
+class FieldJudge( object ):
     def __init__( self, parameters = ['name', 'id', 'class'], regex = re.compile('(paste|text|input|data|comment)') ):
         self.params = parameters
         self.regex = regex
 
     def test( self, field ):
         for param in self.params:
-            if regex.match( field[param] ):
-               return true
-        return false
+            if param in field and self.regex.match( field[param] ):
+               return True
+        return False
 
     def testAll( self, things ):
-        return [ thing for thing in things if test( thing ) ]
+        return [ thing for thing in things if self.test( thing ) ]
 
-class CloudForcer:
+
+class CloudForcer( object ):
     def __init__( self, user_agent = 'Mozilla/6 (Unix/Linux 64bit) Gecko' ):
         self.headers = { 'User-Agent': user_agent }
         self.form_attributes = ['name', 'id', 'class', 'method', 'action']
+        self.judge = FieldJudge()
 
     def getForms( self, forms ):
         ret_forms = []
@@ -79,16 +94,17 @@ class CloudForcer:
 
         forms = []
         for i, form in enumerate( pool.findAll( "form" ) ):
-            cForm = CloudForm( form['action'], form['method'], url, self.headers['User-Agent'] )
+            cForm = TestForm( urlparse.urljoin( url, form['action'] ), form['method'], url, self.headers['User-Agent'] )
             if form['method'] != 'post':
                 continue
-            for child in form.contents:
+            for child in form.findAll( ['input', 'textarea', 'select'] ):
                 try:
-                    if child.name == "input" or child.name == "textarea" or child.name == "select":
-                        if child['type'] == "submit":
-                            cForm.addSubmit( child['name'] )
-                        else:
-                            cForm.addInput( child['name'], child['value'] )
+                    if not 'name' in child:
+                        continue
+                    if 'value' in child:
+                        cForm.addInput( child['name'], child['value'] or None )
+                    if self.judge.test( child ):
+                        cForm.setInput( child['name'] )
                 except AttributeError, err:
                     pass
             forms.append( cForm )
@@ -97,6 +113,7 @@ class CloudForcer:
             print "Method:", form.method
             print "Action:", form.action
             print form.getSubmitString()
+            print form.checkStore()
 
 
 if __name__ == "__main__":
