@@ -1,6 +1,7 @@
 import urllib
 import urllib2
 import urlparse
+import mechanize
 import re
 import base64
 from BeautifulSoup import BeautifulSoup
@@ -53,8 +54,9 @@ class TestForm( CloudForm ):
         return ret
 
     def setInput( self, name, value = None ):
-        value = value | base64.b64encode( name )
+        value = value or base64.b64encode( name )
         self.data[ name ] = value
+        self.inputs[ name ] = value
 
     def checkStore( self ):
         pool = super( TestForm, self ).submit()
@@ -68,8 +70,11 @@ class FieldJudge( object ):
 
     def test( self, field ):
         for param in self.params:
-            if param in field and self.regex.match( field[param] ):
-               return True
+            try:
+                if self.regex.match( field[param] ):
+                    return True
+            except KeyError, e:
+                pass
         return False
 
     def testAll( self, things ):
@@ -77,8 +82,10 @@ class FieldJudge( object ):
 
 
 class CloudForcer( object ):
-    def __init__( self, user_agent = 'Mozilla/6 (Unix/Linux 64bit) Gecko' ):
+    def __init__( self, user_agent = 'Mozilla/6 (Unix/Linux 64bit) Gecko', proxies = None ):
         self.headers = { 'User-Agent': user_agent }
+        self.browser = mechanize.Browser()
+        self.browser.set_proxies( proxies );
         self.form_attributes = ['name', 'id', 'class', 'method', 'action']
         self.judge = FieldJudge()
 
@@ -87,7 +94,7 @@ class CloudForcer( object ):
         return ret_forms
 
     def find_forms( self, url ):
-        response = urllib2.urlopen( urllib2.Request( url, None, self.headers ) )
+        response = self.browser.open( urllib2.Request( url, None, self.headers ) )
         if response.code != 200:
             raise Exception( "HTTP Error (Status code {})".format( response.code ) )
         pool = BeautifulSoup( response.read() )
@@ -99,30 +106,26 @@ class CloudForcer( object ):
                 continue
             for child in form.findAll( ['input', 'textarea', 'select'] ):
                 try:
-                    if not 'name' in child:
+                    if False: #not 'name' in child.keys():
                         continue
                     if 'value' in child:
                         cForm.addInput( child['name'], child['value'] or None )
-                    if self.judge.test( child ):
+                    if self.judge.test( child ) or child.name == 'textarea':
                         cForm.setInput( child['name'] )
                 except AttributeError, err:
                     pass
             forms.append( cForm )
-
         for form in forms:
             print "Method:", form.method
             print "Action:", form.action
             print form.getSubmitString()
             print form.checkStore()
 
-
 if __name__ == "__main__":
 
     forcer = CloudForcer()
     forcer.find_forms( "http://pastebin.com/" )
 
-
     # argparse
     # save data
     # lel
-
